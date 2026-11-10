@@ -1,0 +1,8 @@
+/target/
+/config.ini
+/mics.ini
+/agent-id.txt
+/*.fdb
+/*.FDB
+/*.log
+/.env
