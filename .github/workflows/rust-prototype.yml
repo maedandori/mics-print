@@ -1,0 +1,95 @@
+name: Build Fujifilm Print Rust - 2 EXE
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: rust-two-exe-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  build:
+    name: Build và kiểm thử Print Agent + Print Settings
+    runs-on: windows-2022
+    env:
+      MICS_BUILD_VERSION: 0.6.${{ github.run_number }}
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v4
+      - name: Cài Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Kiểm thử Agent có icon máy in
+        run: cargo test --release --bin print-tray-rust --features agent-icon
+      - name: Kiểm thử Settings có icon bánh răng
+        run: cargo test --release --bin print-settings-rust --features settings-icon
+      - name: Kiem tra cu phap 2 script tren Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $scripts=@('scripts/export-excel-pdf.ps1','scripts/install-rust-update.ps1')
+          foreach($relative in $scripts) {
+            $source=Join-Path (Get-Location) $relative
+            $raw=[System.IO.File]::ReadAllBytes($source)
+            $copy=Join-Path $env:RUNNER_TEMP ([System.IO.Path]::GetFileName($relative))
+            $bom=[byte[]]@(239,187,191)
+            $hasBom=($raw.Length -ge 3 -and $raw[0] -eq 239 -and $raw[1] -eq 187 -and $raw[2] -eq 191)
+            if($hasBom) {
+              [System.IO.File]::WriteAllBytes($copy,$raw)
+            } else {
+              [System.IO.File]::WriteAllBytes($copy,([byte[]]($bom+$raw)))
+            }
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($copy,[ref]$tokens,[ref]$errors) | Out-Null
+            if($errors.Count -ne 0) {
+              $errors | ForEach-Object {Write-Error $_.ToString()}
+              throw "PowerShell 5.1 parse failed: $relative"
+            }
+            Write-Host ("PowerShell 5.1 UTF-8 BOM parser OK: "+$relative)
+          }
+      - name: Kiểm tra kết nối tiến trình cập nhật với giao diện Settings
+        shell: pwsh
+        run: |
+          $updater=Get-Content src/production/update.rs -Raw
+          $settings=Get-Content src/bin/print-settings-rust.rs -Raw
+          $installer=Get-Content scripts/install-rust-update.ps1 -Raw
+          if($updater -notmatch 'rust-update-progress.json' -or
+             $settings -notmatch 'rust-update-progress.json' -or
+             $settings -notmatch 'OnTimerTick' -or
+             $installer -notmatch 'UpdateProgress'){
+            throw 'Thiếu kết nối tiến trình tự cập nhật giữa Agent và Settings'
+          }
+      - name: Build Print Agent với icon máy in
+        run: cargo build --release --bin print-tray-rust --features agent-icon
+      - name: Build Print Settings với icon bánh răng
+        run: cargo build --release --bin print-settings-rust --features settings-icon
+      - name: Đóng gói hai EXE, không kèm binary phụ
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path publish | Out-Null
+          Copy-Item target/release/print-tray-rust.exe publish/Print-Agent.exe
+          Copy-Item target/release/print-settings-rust.exe publish/Print-Settings.exe
+          $files=Get-ChildItem publish -File
+          if($files.Count -ne 2){throw 'Gói phải có đúng 2 EXE'}
+          $files | ForEach-Object { Write-Host ("{0} - {1} bytes" -f $_.Name,$_.Length) }
+      - name: Xuất 2 EXE để tải thủ công
+        uses: actions/upload-artifact@v4
+        with:
+          name: MICS-Print-Rust-Two-EXE-Windows
+          path: publish/
+          retention-days: 30
+      - name: Tạo gói cập nhật Rust chỉ chứa hai EXE
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish/Print-Agent.exe,publish/Print-Settings.exe -DestinationPath mics-rust-update.zip -CompressionLevel Optimal
+          $hash=(Get-FileHash mics-rust-update.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  mics-rust-update.zip" | Set-Content -Encoding ascii mics-rust-update.sha256
+      - name: Phát hành riêng bản Rust
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag="rust-v${{ env.MICS_BUILD_VERSION }}"
+          gh release create $tag mics-rust-update.zip mics-rust-update.sha256 --title "MICS Rust ${{ env.MICS_BUILD_VERSION }} - Two EXE" --notes "Chỉ Print-Agent.exe và Print-Settings.exe. Giữ nguyên config.ini, agent-id.txt và template." --latest --target "${{ github.sha }}"

@@ -1,0 +1,10 @@
+{
+  "jobId": "test-buzai-card-001",
+  "copies": 1,
+  "cards": [
+    {"name": "部材 A", "color": "白", "quantity": "100"},
+    {"name": "部材 B", "color": "黒", "quantity": "200"}
+  ],
+  "cells": {},
+  "startNumber": 1
+}
