@@ -1,4 +1,4 @@
-name: Build Fujifilm Print Rust - 2 EXE
+name: Build MICS Print Rust - 2 EXE
 on:
   push:
     branches: [main]
