@@ -1,6 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #[path = "../production/mod.rs"] mod production;
 #[path = "mics-settings.rs"] mod mics_settings;
+#[path = "../production/mics.rs"] mod mics;
 #[path = "../security/credentials.rs"] mod credentials;
 
 #[cfg(windows)]
@@ -309,6 +310,9 @@ fn main() {
     let vault_status=if credentials::configured(){"Đã lưu credentials bằng DPAPI"}else{"Chưa có credentials"};
     nwg::Label::builder().text(&format!("{vault_status} | Để trống ô mật khẩu/token để giữ nguyên giá trị cũ."))
       .parent(&window).position((20,601)).size((830,28)).build(&mut mics_note).unwrap();
+    let mut test_mics=nwg::Button::default();
+    nwg::Button::builder().text("Test đồng bộ MICS / 同期テスト").parent(&window).position((20,641)).size((275,36)).build(&mut test_mics).unwrap();
+    test_mics.set_visible(false);
     db_pass_label.set_visible(false);db_pass.set_visible(false);
     sync_token_label.set_visible(false);sync_token.set_visible(false);
     mics_note.set_visible(false);
@@ -337,6 +341,11 @@ fn main() {
     let notice_handle=printer_notice.handle;
     let notice_sender=printer_notice.sender();
     let (printer_tx,printer_rx)=mpsc::channel::<Vec<String>>();
+    let (mics_test_tx,mics_test_rx)=mpsc::channel::<Result<String,String>>();
+    let mut mics_test_notice=nwg::Notice::default();
+    nwg::Notice::builder().parent(&window).build(&mut mics_test_notice).unwrap();
+    let mics_test_notice_handle=mics_test_notice.handle;
+    let mics_test_sender=mics_test_notice.sender();
     let printer_refresh_tx=printer_tx.clone();
     std::thread::spawn(move||{
         let found=installed_printers();
@@ -348,6 +357,8 @@ fn main() {
     let mics_labels=Rc::new(mics_labels);
     let mics_enabled=Rc::new(mics_enabled);
     let mics_note=Rc::new(mics_note);
+    let test_mics=Rc::new(test_mics);
+    let test_mics_handle=test_mics.handle;
     let db_pass_label=Rc::new(db_pass_label);
     let sync_token_label=Rc::new(sync_token_label);
     let db_pass=Rc::new(db_pass);
@@ -370,6 +381,16 @@ fn main() {
                 if update_bar.pos()!=percent{update_bar.set_pos(percent);}
                 let value=format!("Cập nhật Rust / 更新状況: {status}");
                 if update_label.text()!=value{update_label.set_text(&value);}
+            }
+            return;
+        }
+        if ev==nwg::Event::OnNotice && h==mics_test_notice_handle {
+            if let Ok(result)=mics_test_rx.try_recv(){
+                test_mics.set_enabled(true);
+                match result {
+                    Ok(msg)=>nwg::simple_message("MICS Sync Test", &msg),
+                    Err(msg)=>nwg::error_message("MICS Sync Test thất bại", &msg),
+                }
             }
             return;
         }
@@ -402,11 +423,33 @@ fn main() {
            for widget in mics_inputs.iter(){widget.set_visible(show_mics);}
            mics_enabled.set_visible(show_mics);
            mics_note.set_visible(show_mics);
+           test_mics.set_visible(show_mics);
            db_pass_label.set_visible(show_mics);
            db_pass.set_visible(show_mics);
            sync_token_label.set_visible(show_mics);
            sync_token.set_visible(show_mics);
            return;
+        }
+        if h==test_mics_handle {
+            if !test_mics.enabled(){return}
+            let host=mics_inputs[0].text();let port=mics_inputs[1].text();
+            let database=mics_inputs[2].text();let user=mics_inputs[3].text();
+            let url=mics_inputs[4].text();
+            let typed_password=db_pass.text();let typed_token=sync_token.text();
+            let saved=if credentials::configured(){credentials::load()}else{Ok(credentials::Credentials{db_password:String::new(),mics_sync_token:String::new()})};
+            let secrets=match saved {
+                Ok(v)=>v,
+                Err(e)=>{nwg::error_message("Không đọc được DPAPI",&e);return}
+            };
+            let password=if typed_password.is_empty(){secrets.db_password}else{typed_password};
+            let token=if typed_token.is_empty(){secrets.mics_sync_token}else{typed_token};
+            test_mics.set_enabled(false);
+            let tx=mics_test_tx.clone();let notice=mics_test_sender.clone();
+            std::thread::spawn(move||{
+                let result=mics::test_sync(&host,&port,&database,&user,&url,&password,&token);
+                if tx.send(result).is_ok(){notice.notice()}
+            });
+            return;
         }
         if h==handles.1 {nwg::stop_thread_dispatch();return}
         if h==handles.6 {
