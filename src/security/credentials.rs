@@ -56,7 +56,7 @@ mod win {
     }
     pub fn load()->Result<Credentials,String>{
         let file=path()?;
-        let encrypted=fs::read(&file).map_err(|_|"Chưa thiết lập MICS-Credentials.exe cho tài khoản Windows đang chạy Agent".to_owned())?;
+        let encrypted=fs::read(&file).map_err(|_|"Chưa lưu mật khẩu và token MICS trong Print-Settings.exe cho tài khoản Windows hiện tại".to_owned())?;
         let plain=transform(&encrypted,false)?;
         serde_json::from_slice(&plain).map_err(|_|"Dữ liệu vault không hợp lệ".into())
     }
