@@ -5,7 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 concurrency:
-  group: rust-two-exe-${{ github.ref }}
+  group: rust-three-exe-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: write
@@ -80,7 +80,7 @@ jobs:
       - name: Xuất 3 EXE để tải thủ công
         uses: actions/upload-artifact@v4
         with:
-          name: MICS-Print-Rust-Two-EXE-Windows
+          name: MICS-Print-Rust-Three-EXE-Windows
           path: publish/
           retention-days: 30
       - name: Tạo gói cập nhật Rust chỉ chứa ba EXE
