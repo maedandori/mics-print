@@ -2,6 +2,7 @@
 #[path = "../production/mod.rs"] mod production;
 #[path = "../production/update.rs"] mod update;
 #[path = "../production/mics.rs"] mod mics;
+#[path = "../production/schedule.rs"] mod schedule;
 #[path = "../security/credentials.rs"] mod credentials;
 #[cfg(windows)]
 fn tray_main() {
@@ -156,6 +157,7 @@ fn main(){
  if args.iter().any(|v|v=="--update-check"){update::app::main();return;}
  if args.iter().any(|v|v=="--core"){
    mics::start_background();
+   schedule::start_background();
    if let Err(e)=production::engine::run(args.iter().any(|v|v=="--enable-live")){production::log(&format!("LỖI CORE: {e}"));std::process::exit(1);}
    return;
  }
