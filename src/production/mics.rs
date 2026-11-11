@@ -61,12 +61,13 @@ fn read(c:&Config,pass:&str)->Result<Value,String>{
  ).map_err(|e|e.to_string())?;
  let mut result:std::collections::BTreeMap<i32,Value>=std::collections::BTreeMap::new();
  let qty=|s:&str|s.trim().parse::<i64>().unwrap_or(0).max(0);
- for (machine,order,status,product,tool_no,mold,good,bad,_staff,plan,cycle) in rows{
+ for (machine,order,status,product,tool_no,mold,good,bad,staff,plan,cycle) in rows{
   let Ok(no)=machine.parse::<i32>() else{continue};
   if let Some(existing)=result.get_mut(&no){
    if existing["order_no"]!=order||existing["mold_name"]!=mold {
     existing["status_code"]=json!("AMBIGUOUS");
     existing["mold_name"]=json!("");
+    existing["staff_name"]=json!("");
    }
    continue;
   }
@@ -74,10 +75,39 @@ fn read(c:&Config,pass:&str)->Result<Value,String>{
   result.insert(no,json!({"machine_no":no,"order_no":order,"status_code":status,
    "product_name":product,"mold_no":tool_no,"mold_name":mold,
    "qty_plan":p,"qty_ok":ok,"qty_ng":qty(&bad),"qty_remaining":(p-ok).max(0),
-   "cycle_seconds":cycle.parse::<f64>().ok(),"staff_name":""}));
+   "cycle_seconds":cycle.parse::<f64>().ok(),"staff_name":staff.trim()}));
  }
  Ok(json!({"source":"mics-data","machines":result.into_values().collect::<Vec<_>>()}))
 }
+
+pub fn test_sync(host:&str, port:&str, database:&str, user:&str, url:&str, password:&str, token:&str)->Result<String,String>{
+ let port=port.parse::<u16>().map_err(|_|"Firebird port không hợp lệ".to_string())?;
+ if host.trim().is_empty()||database.trim().is_empty()||user.trim().is_empty()||password.is_empty()||token.is_empty(){
+  return Err("Thiếu cấu hình Firebird hoặc credentials MICS".into())
+ }
+ let parsed=url::Url::parse(url.trim()).map_err(|e|format!("Sync URL không hợp lệ: {e}"))?;
+ if parsed.scheme()!="https"||parsed.host_str().is_none()||parsed.username()!=""||parsed.password().is_some()||parsed.fragment().is_some(){
+  return Err("Sync URL phải là HTTPS hợp lệ".into())
+ }
+ let c=Config{enabled:true,host:host.into(),port,database:database.into(),user:user.into(),url:url.into(),seconds:30};
+ let mut data=read(&c,password).map_err(|e|format!("FIREBIRD_READ_FAILED: {e}"))?;
+ let machines=data["machines"].as_array().ok_or("Không tìm thấy machines")?;
+ let count=machines.len();
+ if count==0{return Err("Firebird kết nối được nhưng không trả về máy nào; không gửi bản ghi rỗng".into())}
+ let with_staff=machines.iter().filter(|x|x["staff_name"].as_str().is_some_and(|v|!v.trim().is_empty())).count();
+ data["sampled_at"]=json!(chrono::Utc::now().to_rfc3339());
+ let response=ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build()
+  .post(url.trim()).set("Authorization",&format!("Bearer {token}")).send_json(data)
+  .map_err(|e|format!("WORKER_SYNC_FAILED: {e}"))?;
+ if !(200..300).contains(&response.status()){return Err(format!("WORKER_HTTP_{}",response.status()))}
+ let status=response.status();
+ let body:Value=response.into_json().unwrap_or(Value::Null);
+ if body.get("success").and_then(Value::as_bool)==Some(false)||body.get("ok").and_then(Value::as_bool)==Some(false){
+  return Err(format!("Worker trả về lỗi: {}",body))
+ }
+ Ok(format!("Firebird: OK, {count} máy; STAFFNAME có dữ liệu: {with_staff}/{count}. Worker HTTP {status} đã nhận request. Chưa xác minh riêng từng cột D1: cần kiểm tra Worker và đọc lại D1."))
+}
+
 pub fn start_background(){
  thread::spawn(||{
   let c=match load(){Ok(v)=>v,Err(e)=>{crate::production::log(&format!("MICS_CONFIG_ERROR {e}"));return}};
