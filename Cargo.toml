@@ -45,7 +45,3 @@ path = "src/bin/print-settings-rust.rs"
 [[bin]]
 name = "print-agent-rust"
 path = "src/bin/print-agent-rust.rs"
-
-[[bin]]
-name = "mics-credentials"
-path = "src/bin/mics-credentials.rs"
