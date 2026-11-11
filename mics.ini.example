@@ -1,0 +1,8 @@
+[mics]
+enabled=0
+host=192.168.1.10
+port=3050
+database=D:\MICS\DATA.FDB
+user=SYSDBA
+sync_url=https://YOUR-WORKER.workers.dev/YOUR-EXISTING-MICS-SYNC-ROUTE
+interval_seconds=30
