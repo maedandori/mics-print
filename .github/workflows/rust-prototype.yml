@@ -65,14 +65,14 @@ jobs:
         run: cargo build --release --bin print-tray-rust --features agent-icon
       - name: Build Print Settings với icon bánh răng
         run: cargo build --release --bin print-settings-rust --features settings-icon
-      - name: Đóng gói ba EXE, không kèm binary phụ
+      - name: Đóng gói hai EXE, không kèm binary phụ
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path publish | Out-Null
           Copy-Item target/release/print-tray-rust.exe publish/Print-Agent.exe
           Copy-Item target/release/print-settings-rust.exe publish/Print-Settings.exe
           $files=Get-ChildItem publish -File
-          if($files.Count -ne 3){throw 'Gói phải có đúng 2 EXE'}
+          if($files.Count -ne 2){throw 'Gói phải có đúng 2 EXE'}
           $files | ForEach-Object { Write-Host ("{0} - {1} bytes" -f $_.Name,$_.Length) }
       - name: Xuất 2 EXE để tải thủ công
         uses: actions/upload-artifact@v4
@@ -80,7 +80,7 @@ jobs:
           name: MICS-Print-Rust-Two-EXE-Windows
           path: publish/
           retention-days: 30
-      - name: Tạo gói cập nhật Rust chỉ chứa ba EXE
+      - name: Tạo gói cập nhật Rust chỉ chứa hai EXE
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
