@@ -419,6 +419,8 @@ fn main() {
            for widget in print_browse.iter(){widget.set_visible(!show_mics);}
            a.set_visible(!show_mics);b.set_visible(!show_mics);
            print_note.set_visible(!show_mics);
+           update_label.set_visible(!show_mics);
+           update_bar.set_visible(!show_mics);
            for widget in mics_labels.iter(){widget.set_visible(show_mics);}
            for widget in mics_inputs.iter(){widget.set_visible(show_mics);}
            mics_enabled.set_visible(show_mics);
