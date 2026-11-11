@@ -97,7 +97,7 @@ pub mod app {
             }
             Ok(url.to_string())
         };
-        let sum_url=get_asset("fujifilm-rust-update.sha256")?;
+        let sum_url=get_asset("mics-rust-update.sha256")?;
         let zip_url=get_asset("mics-rust-update.zip")?;
         let hash_text=String::from_utf8(fetch(&sum_url,1024,false)?).map_err(|e|e.to_string())?;
         let expected=hash_text.split_whitespace().next().ok_or("Thiếu SHA256")?;
@@ -125,7 +125,7 @@ pub mod app {
         }
         // Không ghi file chương trình trước khi xác minh toàn bộ.
         progress(85,"preparing","Đang giải nén và chuẩn bị hai EXE...");
-        let folder=std::env::temp_dir().join(format!("fujifilm-rust-{}",uuid::Uuid::new_v4()));
+        let folder=std::env::temp_dir().join(format!("mics-rust-{}",uuid::Uuid::new_v4()));
         fs::create_dir_all(&folder).map_err(|e|e.to_string())?;
         let result=(||->Result<(),String>{
             let mut archive=zip::ZipArchive::new(std::io::Cursor::new(&bytes)).map_err(|e|e.to_string())?;
