@@ -47,6 +47,13 @@ fn read(c:&Config,pass:&str)->Result<Value,String>{
  ).map_err(|e|e.to_string())?;
  let has_mend=mend_rows.first().is_some_and(|row|row.0>0);
  let mend_expr=if has_mend {"COALESCE(TRIM(CAST(S.MEND AS VARCHAR(40))), '')"} else {"CAST('' AS VARCHAR(40))"};
+ // REALPICKQTY is the actual per-cycle robot pick count. Fail safely if absent on older MICS schemas.
+ let pick_rows:Vec<(i64,)>=db.query(
+  "SELECT COUNT(*) FROM RDB$RELATION_FIELDS WHERE RDB$RELATION_NAME='MACHINEWORK' AND TRIM(RDB$FIELD_NAME)='REALPICKQTY'",()
+ ).map_err(|e|e.to_string())?;
+ let pick_expr=if pick_rows.first().is_some_and(|row|row.0>0) {
+  "COALESCE(TRIM(CAST(W.REALPICKQTY AS VARCHAR(24))), '')"
+ } else {"CAST('' AS VARCHAR(24))"};
  let sql=format!(
  "SELECT TRIM(CAST(W.MACHINENO AS VARCHAR(24))), \
  COALESCE(TRIM(CAST(W.MORDERNO AS VARCHAR(40))), ''), \
@@ -59,16 +66,17 @@ fn read(c:&Config,pass:&str)->Result<Value,String>{
  COALESCE(TRIM(CAST(W.STAFFNAME AS VARCHAR(100))), ''), \
  COALESCE(TRIM(CAST(W.QTYPLAN AS VARCHAR(24))), ''), \
  COALESCE(TRIM(CAST(W.REALCYCLETIME AS VARCHAR(24))), ''), \
+ {}, \
  {} \
  FROM MACHINEWORK W \
  LEFT JOIN SCHEDULE S ON S.MORDERNO=W.MORDERNO AND S.MACHINENO=W.MACHINENO AND COALESCE(S.DELETEFLG,0)=0 \
  LEFT JOIN TOOL T ON T.ENTRYNO=S.TOOLENTRYNO \
  WHERE W.MACHINENO IN (5,6,7,8,10,11,12,13,14,15,16,17,18,19) \
- ORDER BY W.MACHINENO",mend_expr);
- let rows:Vec<(String,String,String,String,String,String,String,String,String,String,String,String)>=db.query(&sql,()).map_err(|e|e.to_string())?;
+ ORDER BY W.MACHINENO",mend_expr,pick_expr);
+ let rows:Vec<(String,String,String,String,String,String,String,String,String,String,String,String,String)>=db.query(&sql,()).map_err(|e|e.to_string())?;
  let mut result:std::collections::BTreeMap<i32,Value>=std::collections::BTreeMap::new();
  let qty=|s:&str|s.trim().parse::<i64>().unwrap_or(0).max(0);
- for (machine,order,status,product,tool_no,mold,good,bad,staff,plan,cycle,scheduled_end) in rows{
+ for (machine,order,status,product,tool_no,mold,good,bad,staff,plan,cycle,scheduled_end,pick) in rows{
   let Ok(no)=machine.parse::<i32>() else{continue};
   if let Some(existing)=result.get_mut(&no){
    if existing["order_no"]!=order||existing["mold_name"]!=mold {
@@ -82,7 +90,7 @@ fn read(c:&Config,pass:&str)->Result<Value,String>{
   result.insert(no,json!({"machine_no":no,"order_no":order,"status_code":status,
    "product_name":product,"mold_no":tool_no,"mold_name":mold,
    "qty_plan":p,"qty_ok":ok,"qty_ng":qty(&bad),"qty_remaining":(p-ok).max(0),
-   "cycle_seconds":cycle.parse::<f64>().ok(),"staff_name":staff.trim(),
+   "cycle_seconds":cycle.parse::<f64>().ok(),"pick_qty":pick.trim().parse::<f64>().ok().filter(|v|v.is_finite()&&*v>0.0),"staff_name":staff.trim(),
    "scheduled_end_at":if scheduled_end.trim().is_empty(){None}else{Some(scheduled_end.trim())}}));
  }
  Ok(json!({"source":"mics-data","machines":result.into_values().collect::<Vec<_>>()}))
