@@ -292,9 +292,13 @@ fn main() {
       .build(&mut mics_enabled).unwrap();
     mics_enabled.set_visible(false);
     let mut mics_note=nwg::Label::default();
-    nwg::Label::builder().text("Chỉ bật trên 1 máy. Token: MICS_SYNC_TOKEN; mật khẩu: MICS_DB_PASSWORD (biến môi trường Windows).")
+    nwg::Label::builder().text("Chỉ bật trên 1 máy. Mật khẩu và MICS_SYNC_TOKEN được lưu bằng DPAPI qua MICS-Credentials.exe.")
       .parent(&window).position((20,548)).size((830,45)).build(&mut mics_note).unwrap();
     mics_note.set_visible(false);
+    let mut secure_button=nwg::Button::default();
+    nwg::Button::builder().text("Mở MICS Credentials / 認証情報").parent(&window)
+      .position((20,605)).size((320,36)).build(&mut secure_button).unwrap();
+    secure_button.set_visible(false);
 
     // Settings hiển thị thông tin updater thực tế, không mô phỏng phần trăm chạy.
     let mut update_label=nwg::Label::default();
@@ -332,6 +336,8 @@ fn main() {
     let mics_labels=Rc::new(mics_labels);
     let mics_enabled=Rc::new(mics_enabled);
     let mics_note=Rc::new(mics_note);
+    let secure_button=Rc::new(secure_button);
+    let secure_button_handle=secure_button.handle;
     let print_note=Rc::new(note);
     let print_printer_label=Rc::new(p_label);
     let print_mode_label=Rc::new(mode_label);
@@ -382,9 +388,18 @@ fn main() {
            for widget in mics_inputs.iter(){widget.set_visible(show_mics);}
            mics_enabled.set_visible(show_mics);
            mics_note.set_visible(show_mics);
+           secure_button.set_visible(show_mics);
            return;
         }
         if h==handles.1 {nwg::stop_thread_dispatch();return}
+        if h==secure_button_handle {
+            let exe=Config::base_dir().join("MICS-Credentials.exe");
+            match std::process::Command::new(exe).spawn(){
+                Ok(_)=>{},
+                Err(e)=>nwg::error_message("Không mở được MICS Credentials",&e.to_string())
+            }
+            return;
+        }
         if h==handles.6 {
             // Dùng nội dung đang nhập; không yêu cầu lưu token xuống ổ đĩa.
             let result=test_connection(&inputs[0].text(), &inputs[1].text());
