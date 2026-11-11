@@ -5,7 +5,7 @@ Imported the existing two-EXE Rust Print Agent from maedandori/fujifilm-print an
 Print Agent retains Excel/PDF, SumatraPDF, WebSocket, heartbeat, auto-update and Windows System Tray. Print Settings is retained.
 
 ## MICS
-Copy mics.ini.example to mics.ini. Set enabled=1 only on the one Windows PC authorized to connect to the Firebird server; other agents must keep it disabled. Configure Windows environment variables MICS_DB_PASSWORD and MICS_SYNC_TOKEN. Restart the agent after changing environment variables.
+Copy mics.ini.example to mics.ini. Set enabled=1 only on the one Windows PC authorized to connect to the Firebird server; other agents must keep it disabled. Configure MICS-Credentials.exe (encrypted Windows DPAPI vault). Restart the agent after changing environment variables.
 
 Read-only MACHINEWORK + SCHEDULE + TOOL query returns current status, order, mold, product, planned quantity, OK/NG quantity and cycle time. No employee names are uploaded. Data is sampled every 30 seconds and HTTPS-uploaded only when changed, using the same JSON fields as mics-data. Worker endpoint and D1 tables must already exist.
 
