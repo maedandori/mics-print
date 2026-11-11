@@ -6,3 +6,6 @@
 /*.FDB
 /*.log
 /.env
+
+/credentials.dpapi
+/credentials.dpapi.*

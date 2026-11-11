@@ -5,7 +5,7 @@ pub mod app {
     use sha2::{Digest,Sha256};
 
     const REPO: &str="https://api.github.com/repos/maedandori/mics-print/releases/latest";
-    const FILES: [&str;2] = ["Print-Agent.exe", "Print-Settings.exe"];
+    const FILES: [&str;3] = ["Print-Agent.exe", "Print-Settings.exe", "MICS-Credentials.exe"];
     fn log(s:&str){let path=std::env::current_exe().unwrap().parent().unwrap().join("rust-update.log");
         use std::io::Write;if let Ok(mut f)=fs::OpenOptions::new().create(true).append(true).open(path){let _=writeln!(f,"{s}");}}
     // Trang Settings đọc trạng thái tại thư mục ứng dụng. Phần trăm tải là byte thực nhận.
@@ -80,7 +80,7 @@ pub mod app {
         let meta:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
         let tag=meta["tag_name"].as_str().ok_or("Thiếu version GitHub Release")?;
         let latest=parse_version(tag).ok_or("Phiên bản release Rust không hợp lệ")?;
-        let current=parse_version(option_env!("FUJIFILM_BUILD_VERSION").unwrap_or("0.0.0")).ok_or("Phiên bản hiện tại sai")?;
+        let current=parse_version(option_env!("MICS_BUILD_VERSION").unwrap_or("0.0.0")).ok_or("Phiên bản hiện tại sai")?;
         if latest<=current {
             progress(100,"up-to-date",&format!("Đã là phiên bản mới nhất: {tag}"));
             log(&format!("Cap nhat: dang la ban moi nhat ({}); chi cap nhat khi phat hien ban cao hon",tag));
@@ -98,7 +98,7 @@ pub mod app {
             Ok(url.to_string())
         };
         let sum_url=get_asset("fujifilm-rust-update.sha256")?;
-        let zip_url=get_asset("fujifilm-rust-update.zip")?;
+        let zip_url=get_asset("mics-rust-update.zip")?;
         let hash_text=String::from_utf8(fetch(&sum_url,1024,false)?).map_err(|e|e.to_string())?;
         let expected=hash_text.split_whitespace().next().ok_or("Thiếu SHA256")?;
         if expected.len()!=64||!expected.bytes().all(|b|b.is_ascii_hexdigit()){return Err("SHA256 không hợp lệ".into())}

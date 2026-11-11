@@ -5,7 +5,7 @@ param(
  [Parameter(Mandatory=$true)][int]$UpdaterPid
 )
 $ErrorActionPreference = 'Stop'
-$files = @('Print-Agent.exe','Print-Settings.exe')
+$files = @('Print-Agent.exe','Print-Settings.exe','MICS-Credentials.exe')
 $backup = Join-Path $Stage 'backup'
 $success = $false
 $trayStopped = $false

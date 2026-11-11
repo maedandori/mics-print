@@ -82,8 +82,12 @@ pub fn start_background(){
  thread::spawn(||{
   let c=match load(){Ok(v)=>v,Err(e)=>{crate::production::log(&format!("MICS_CONFIG_ERROR {e}"));return}};
   if !c.enabled{return}
-  let pass=match std::env::var("MICS_DB_PASSWORD"){Ok(v) if !v.is_empty()=>v,_=>{crate::production::log("MICS_DB_PASSWORD missing");return}};
-  let token=match std::env::var("MICS_SYNC_TOKEN"){Ok(v) if !v.is_empty()=>v,_=>{crate::production::log("MICS_SYNC_TOKEN missing");return}};
+  let credentials=match crate::credentials::load(){
+   Ok(v)=>v,
+   Err(e)=>{crate::production::log(&format!("MICS_VAULT_ERROR {e}"));return}
+  };
+  let pass=credentials.db_password;
+  let token=credentials.mics_sync_token;
   let mut last=String::new();
   loop{
    match read(&c,&pass){

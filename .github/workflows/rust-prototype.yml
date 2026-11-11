@@ -1,4 +1,4 @@
-name: Build MICS Print Rust - 2 EXE
+name: Build MICS Print Rust - 3 EXE
 on:
   push:
     branches: [main]
@@ -59,30 +59,35 @@ jobs:
              $installer -notmatch 'UpdateProgress'){
             throw 'Thiếu kết nối tiến trình tự cập nhật giữa Agent và Settings'
           }
+      - name: Kiểm thử Windows DPAPI Credentials
+        run: cargo test --release --bin mics-credentials
+      - name: Build MICS Credentials GUI
+        run: cargo build --release --bin mics-credentials
       - name: Build Print Agent với icon máy in
         run: cargo build --release --bin print-tray-rust --features agent-icon
       - name: Build Print Settings với icon bánh răng
         run: cargo build --release --bin print-settings-rust --features settings-icon
-      - name: Đóng gói hai EXE, không kèm binary phụ
+      - name: Đóng gói ba EXE, không kèm binary phụ
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path publish | Out-Null
           Copy-Item target/release/print-tray-rust.exe publish/Print-Agent.exe
           Copy-Item target/release/print-settings-rust.exe publish/Print-Settings.exe
+          Copy-Item target/release/mics-credentials.exe publish/MICS-Credentials.exe
           $files=Get-ChildItem publish -File
-          if($files.Count -ne 2){throw 'Gói phải có đúng 2 EXE'}
+          if($files.Count -ne 3){throw 'Gói phải có đúng 3 EXE'}
           $files | ForEach-Object { Write-Host ("{0} - {1} bytes" -f $_.Name,$_.Length) }
-      - name: Xuất 2 EXE để tải thủ công
+      - name: Xuất 3 EXE để tải thủ công
         uses: actions/upload-artifact@v4
         with:
           name: MICS-Print-Rust-Two-EXE-Windows
           path: publish/
           retention-days: 30
-      - name: Tạo gói cập nhật Rust chỉ chứa hai EXE
+      - name: Tạo gói cập nhật Rust chỉ chứa ba EXE
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
-          Compress-Archive -Path publish/Print-Agent.exe,publish/Print-Settings.exe -DestinationPath mics-rust-update.zip -CompressionLevel Optimal
+          Compress-Archive -Path publish/Print-Agent.exe,publish/Print-Settings.exe,publish/MICS-Credentials.exe -DestinationPath mics-rust-update.zip -CompressionLevel Optimal
           $hash=(Get-FileHash mics-rust-update.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  mics-rust-update.zip" | Set-Content -Encoding ascii mics-rust-update.sha256
       - name: Phát hành riêng bản Rust
@@ -92,4 +97,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag="rust-v${{ env.MICS_BUILD_VERSION }}"
-          gh release create $tag mics-rust-update.zip mics-rust-update.sha256 --title "MICS Rust ${{ env.MICS_BUILD_VERSION }} - Two EXE" --notes "Chỉ Print-Agent.exe và Print-Settings.exe. Giữ nguyên config.ini, agent-id.txt và template." --latest --target "${{ github.sha }}"
+          gh release create $tag mics-rust-update.zip mics-rust-update.sha256 --title "MICS Rust ${{ env.MICS_BUILD_VERSION }} - Three EXE" --notes "Gồm Print-Agent.exe, Print-Settings.exe và MICS-Credentials.exe. Giữ nguyên config.ini, agent-id.txt và template." --latest --target "${{ github.sha }}"

@@ -2,6 +2,7 @@
 #[path = "../production/mod.rs"] mod production;
 #[path = "../production/update.rs"] mod update;
 #[path = "../production/mics.rs"] mod mics;
+#[path = "../security/credentials.rs"] mod credentials;
 #[cfg(windows)]
 fn tray_main() {
  use native_windows_gui as nwg;
