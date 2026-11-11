@@ -1,6 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #[path = "../production/mod.rs"] mod production;
 #[path = "mics-settings.rs"] mod mics_settings;
+#[path = "../security/credentials.rs"] mod credentials;
 
 #[cfg(windows)]
 fn installed_printers() -> Vec<String> {
@@ -277,7 +278,7 @@ fn main() {
     ];
     let mut mics_labels=Vec::new();let mut mics_inputs=Vec::new();
     for (i,(name,value)) in mics_fields.iter().enumerate(){
-      let y=145+(i as i32)*64;
+      let y=125+(i as i32)*57;
       let mut l=nwg::Label::default();
       nwg::Label::builder().text(name).parent(&window).position((20,y)).size((320,28)).build(&mut l).unwrap();
       let mut input=nwg::TextInput::default();
@@ -287,19 +288,30 @@ fn main() {
     }
     let mut mics_enabled=nwg::CheckBox::default();
     nwg::CheckBox::builder().text("Bật đồng bộ MICS / MICS同期を有効化").parent(&window)
-      .position((20,83)).size((570,36))
+      .position((20,70)).size((570,36))
       .check_state(if mics_cfg.enabled{nwg::CheckBoxState::Checked}else{nwg::CheckBoxState::Unchecked})
       .build(&mut mics_enabled).unwrap();
     mics_enabled.set_visible(false);
+    // No stored secret is ever displayed. Blank fields keep the existing DPAPI credentials.
+    let mut db_pass_label=nwg::Label::default();
+    nwg::Label::builder().text("Mật khẩu Firebird / DBパスワード").parent(&window)
+       .position((20,485)).size((325,28)).build(&mut db_pass_label).unwrap();
+    let mut db_pass=nwg::TextInput::default();
+    nwg::TextInput::builder().password(Some('*')).parent(&window)
+       .position((350,485)).size((480,28)).build(&mut db_pass).unwrap();
+    let mut sync_token_label=nwg::Label::default();
+    nwg::Label::builder().text("MICS_SYNC_TOKEN").parent(&window)
+       .position((20,539)).size((325,28)).build(&mut sync_token_label).unwrap();
+    let mut sync_token=nwg::TextInput::default();
+    nwg::TextInput::builder().password(Some('*')).parent(&window)
+       .position((350,539)).size((480,28)).build(&mut sync_token).unwrap();
     let mut mics_note=nwg::Label::default();
-    nwg::Label::builder().text("Chỉ bật trên 1 máy. Mật khẩu và MICS_SYNC_TOKEN được lưu bằng DPAPI qua MICS-Credentials.exe.")
-      .parent(&window).position((20,548)).size((830,45)).build(&mut mics_note).unwrap();
+    let vault_status=if credentials::configured(){"Đã lưu credentials bằng DPAPI"}else{"Chưa có credentials"};
+    nwg::Label::builder().text(&format!("{vault_status} | Để trống ô mật khẩu/token để giữ nguyên giá trị cũ."))
+      .parent(&window).position((20,601)).size((830,28)).build(&mut mics_note).unwrap();
+    db_pass_label.set_visible(false);db_pass.set_visible(false);
+    sync_token_label.set_visible(false);sync_token.set_visible(false);
     mics_note.set_visible(false);
-    let mut secure_button=nwg::Button::default();
-    nwg::Button::builder().text("Mở MICS Credentials / 認証情報").parent(&window)
-      .position((20,605)).size((320,36)).build(&mut secure_button).unwrap();
-    secure_button.set_visible(false);
-
     // Settings hiển thị thông tin updater thực tế, không mô phỏng phần trăm chạy.
     let mut update_label=nwg::Label::default();
     nwg::Label::builder().text("Cập nhật Rust / 更新状況: Chưa có hoạt động cập nhật")
@@ -336,8 +348,10 @@ fn main() {
     let mics_labels=Rc::new(mics_labels);
     let mics_enabled=Rc::new(mics_enabled);
     let mics_note=Rc::new(mics_note);
-    let secure_button=Rc::new(secure_button);
-    let secure_button_handle=secure_button.handle;
+    let db_pass_label=Rc::new(db_pass_label);
+    let sync_token_label=Rc::new(sync_token_label);
+    let db_pass=Rc::new(db_pass);
+    let sync_token=Rc::new(sync_token);
     let print_note=Rc::new(note);
     let print_printer_label=Rc::new(p_label);
     let print_mode_label=Rc::new(mode_label);
@@ -388,18 +402,13 @@ fn main() {
            for widget in mics_inputs.iter(){widget.set_visible(show_mics);}
            mics_enabled.set_visible(show_mics);
            mics_note.set_visible(show_mics);
-           secure_button.set_visible(show_mics);
+           db_pass_label.set_visible(show_mics);
+           db_pass.set_visible(show_mics);
+           sync_token_label.set_visible(show_mics);
+           sync_token.set_visible(show_mics);
            return;
         }
         if h==handles.1 {nwg::stop_thread_dispatch();return}
-        if h==secure_button_handle {
-            let exe=Config::base_dir().join("MICS-Credentials.exe");
-            match std::process::Command::new(exe).spawn(){
-                Ok(_)=>{},
-                Err(e)=>nwg::error_message("Không mở được MICS Credentials",&e.to_string())
-            }
-            return;
-        }
         if h==handles.6 {
             // Dùng nội dung đang nhập; không yêu cầu lưu token xuống ổ đĩa.
             let result=test_connection(&inputs[0].text(), &inputs[1].text());
@@ -428,8 +437,33 @@ fn main() {
                    sync_url:mics_inputs[4].text().trim().into(),
                    interval_seconds:mics_inputs[5].text().trim().into(),
                 };
-                match cfg.save(&Config::base_dir().join("mics.ini")){
-                   Ok(())=>nwg::simple_message("MICS Settings","Đã lưu mics.ini. Khởi động lại Print Agent để áp dụng cài đặt."),
+                let update_secrets=||->Result<(),String>{
+                    let new_password=db_pass.text();
+                    let new_token=sync_token.text();
+                    if new_password.is_empty()&&new_token.is_empty(){
+                        if cfg.enabled && !credentials::configured(){
+                            return Err("Chưa nhập mật khẩu và token MICS. Hãy nhập cả hai ô để bật đồng bộ.".into())
+                        }
+                        return Ok(())
+                    }
+                    // Changing one field preserves the other secret, if one was saved before.
+                    let mut saved=if credentials::configured(){
+                        credentials::load()?
+                    }else{
+                        credentials::Credentials{db_password:String::new(),mics_sync_token:String::new()}
+                    };
+                    if !new_password.is_empty(){saved.db_password=new_password;}
+                    if !new_token.is_empty(){saved.mics_sync_token=new_token;}
+                    credentials::save(&saved)
+                };
+                let result=cfg.check().and_then(|_|update_secrets())
+                    .and_then(|_|cfg.save(&Config::base_dir().join("mics.ini")));
+                match result{
+                   Ok(())=>{
+                       db_pass.set_text("");sync_token.set_text("");
+                       mics_note.set_text("Credentials đã được lưu bằng DPAPI. Để trống ô bí mật sẽ giữ nguyên giá trị cũ.");
+                       nwg::simple_message("MICS Settings","Đã lưu MICS và thông tin bảo mật bằng DPAPI. Khởi động lại Agent.");
+                   },
                    Err(e)=>nwg::error_message("Không lưu được MICS",&e),
                 }
                 return;
