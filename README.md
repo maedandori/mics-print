@@ -7,7 +7,7 @@ Print Agent retains Excel/PDF, SumatraPDF, WebSocket, heartbeat, auto-update and
 ## MICS
 Copy mics.ini.example to mics.ini. Set enabled=1 only on the one Windows PC authorized to connect to the Firebird server; other agents must keep it disabled. Enter Firebird password and MICS_SYNC_TOKEN in the MICS tab of Print-Settings.exe and save. Restart the agent.
 
-Read-only MACHINEWORK + SCHEDULE + TOOL query returns current status, order, mold, product, planned quantity, OK/NG quantity and cycle time. No employee names are uploaded. Data is sampled every 30 seconds and HTTPS-uploaded only when changed, using the same JSON fields as mics-data. Worker endpoint and D1 tables must already exist.
+Read-only MACHINEWORK + SCHEDULE + TOOL query returns current status, order, mold, product, planned quantity, OK/NG quantity and cycle time. The read-only MICS snapshot now includes MACHINEWORK.STAFFNAME as `staff_name` when available. Treat this as employee data; restrict access to the Worker/D1 and avoid logging raw names. Data is sampled every 30 seconds and HTTPS-uploaded only when changed, using the same JSON fields as mics-data. Worker endpoint and D1 tables must already exist. The MICS tab includes **Test đồng bộ MICS**, which performs one Firebird read and one HTTPS POST even if the snapshot is unchanged; it reports Firebird row counts, populated STAFFNAME count and Worker HTTP acceptance. It does not prove D1 column persistence without a separate D1 readback.
 
 The single-reader setting is not a distributed lock. For strict enforcement with two agents a Worker lease is needed. Current MACHINEWORK snapshots do not provide a full 07:30 shift changeover history.
 
