@@ -65,7 +65,7 @@ fn read(c:&Config,pass:&str)->Result<Value,String>{
  LEFT JOIN TOOL T ON T.ENTRYNO=S.TOOLENTRYNO \
  WHERE W.MACHINENO IN (5,6,7,8,10,11,12,13,14,15,16,17,18,19) \
  ORDER BY W.MACHINENO",mend_expr);
- let rows:Vec<(String,String,String,String,String,String,String,String,String,String,String,String,String)>=db.query(&sql,()).map_err(|e|e.to_string())?;
+ let rows:Vec<(String,String,String,String,String,String,String,String,String,String,String,String)>=db.query(&sql,()).map_err(|e|e.to_string())?;
  let mut result:std::collections::BTreeMap<i32,Value>=std::collections::BTreeMap::new();
  let qty=|s:&str|s.trim().parse::<i64>().unwrap_or(0).max(0);
  for (machine,order,status,product,tool_no,mold,good,bad,staff,plan,cycle,scheduled_end) in rows{
