@@ -2,6 +2,7 @@
 name = "mics-print"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 description = "Rust Print Agent dry-run and benchmark prototype"
 
 [features]
@@ -32,3 +33,19 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[[bin]]
+name = "print-tray-rust"
+path = "src/bin/print-tray-rust.rs"
+
+[[bin]]
+name = "print-settings-rust"
+path = "src/bin/print-settings-rust.rs"
+
+[[bin]]
+name = "print-agent-rust"
+path = "src/bin/print-agent-rust.rs"
+
+[[bin]]
+name = "mics-credentials"
+path = "src/bin/mics-credentials.rs"
