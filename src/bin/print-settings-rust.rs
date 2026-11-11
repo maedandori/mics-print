@@ -1,5 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #[path = "../production/mod.rs"] mod production;
+#[path = "mics-settings.rs"] mod mics_settings;
 
 #[cfg(windows)]
 fn installed_printers() -> Vec<String> {
@@ -185,18 +186,24 @@ fn read_update_progress() -> Option<(u32,String)> {
 fn main() {
     use native_windows_gui as nwg;
     use production::Config;
-    use std::{rc::Rc, sync::mpsc};
+    use std::{rc::Rc, cell::Cell, sync::mpsc};
+    use mics_settings::MicsSettings;
 
     nwg::init().expect("Không thể mở Print Settings");
     nwg::Font::set_global_family("Segoe UI").unwrap();
 
-    let app_version=option_env!("FUJIFILM_BUILD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    let app_version=option_env!("MICS_BUILD_VERSION").or(option_env!("FUJIFILM_BUILD_VERSION")).unwrap_or(env!("CARGO_PKG_VERSION"));
     let embedded=nwg::EmbedResource::load(None).expect("Không tải được icon Settings");
     let gear_icon=embedded.icon(1,Some((32,32))).unwrap_or_else(||nwg::Icon::from_system(nwg::OemIcon::Information));
     let mut window=nwg::Window::default();
-    nwg::Window::builder().title(&format!("Fujifilm Print Settings Rust v{app_version} / 印刷設定")).icon(Some(&gear_icon))
-        .size((870,785)).position((150,60)).build(&mut window).unwrap();
+    nwg::Window::builder().title(&format!("MICS Print Settings Rust v{app_version} / 印刷設定")).icon(Some(&gear_icon))
+        .size((870,815)).position((150,40)).build(&mut window).unwrap();
     let c=Config::load(&Config::base_dir().join("config.ini")).unwrap_or_default();
+    let mics_cfg=MicsSettings::load(&Config::base_dir().join("mics.ini")).unwrap_or_default();
+    let mut tab_print=nwg::Button::default();let mut tab_mics=nwg::Button::default();
+    nwg::Button::builder().text("🖨 Print Agent / 印刷設定").parent(&window).position((20,12)).size((245,34)).build(&mut tab_print).unwrap();
+    nwg::Button::builder().text("MICS / 生産データ").parent(&window).position((275,12)).size((245,34)).build(&mut tab_mics).unwrap();
+    let active_mics=Rc::new(Cell::new(false));
 
     let fields=[
         ("API Machine-Control",c.api_base_url.clone()),
@@ -209,7 +216,7 @@ fn main() {
         ("Số trang tối đa mỗi PDF / 最大ページ数",c.max_pdf_pages.to_string()),
     ];
     let mut labels=Vec::new();let mut inputs=Vec::new();
-    let positions=[12,58,150,196,242,334,380,426];
+    let positions=[62,108,200,246,292,384,430,476];
     for (i,(label,value)) in fields.iter().enumerate(){
         let y=positions[i];
         let mut l=nwg::Label::default();
@@ -219,52 +226,83 @@ fn main() {
         labels.push(l);inputs.push(t);
     }
     let mut p_label=nwg::Label::default();
-    nwg::Label::builder().text("Máy in Windows / Windowsプリンター").parent(&window).position((20,104)).size((320,28)).build(&mut p_label).unwrap();
+    nwg::Label::builder().text("Máy in Windows / Windowsプリンター").parent(&window).position((20,154)).size((320,28)).build(&mut p_label).unwrap();
     let mut printers=vec!["(Máy in mặc định Windows)".to_string()];
     // Chỉ dùng máy in đã lưu để cửa sổ xuất hiện ngay; tải danh sách trên luồng nền.
     if !c.printer_name.is_empty()&&!printers.contains(&c.printer_name){printers.push(c.printer_name.clone());}
     let printer_index=printers.iter().position(|s|s==&c.printer_name).unwrap_or(0);
     let mut printer=nwg::ComboBox::<String>::default();
     nwg::ComboBox::builder().collection(printers).selected_index(Some(printer_index))
-       .parent(&window).position((350,104)).size((380,180)).build(&mut printer).unwrap();
+       .parent(&window).position((350,154)).size((380,180)).build(&mut printer).unwrap();
 
     let mut mode_label=nwg::Label::default();
-    nwg::Label::builder().text("Chế độ in / 印刷方式").parent(&window).position((20,288)).size((320,28)).build(&mut mode_label).unwrap();
+    nwg::Label::builder().text("Chế độ in / 印刷方式").parent(&window).position((20,338)).size((320,28)).build(&mut mode_label).unwrap();
     let mut mode=nwg::ComboBox::<String>::default();
     nwg::ComboBox::builder()
       .collection(vec!["Xuất PDF rồi in / PDFを印刷".to_string(),"Chỉ lưu PDF / PDF保存のみ".to_string()])
       .selected_index(Some(if c.print_mode=="pdf"{1}else{0}))
-      .parent(&window).position((350,288)).size((380,100)).build(&mut mode).unwrap();
+      .parent(&window).position((350,338)).size((380,100)).build(&mut mode).unwrap();
 
     let mut browse_xlsx=nwg::Button::default();let mut browse_folder=nwg::Button::default();let mut browse_exe=nwg::Button::default();
     let mut refresh=nwg::Button::default();let mut test=nwg::Button::default();
-    nwg::Button::builder().text("Test URL + Token").parent(&window).position((741,58)).size((108,28)).build(&mut test).unwrap();
-    nwg::Button::builder().text("Làm mới / 更新").parent(&window).position((741,104)).size((108,28)).build(&mut refresh).unwrap();
-    nwg::Button::builder().text("Chọn file...").parent(&window).position((741,196)).size((108,28)).build(&mut browse_xlsx).unwrap();
-    nwg::Button::builder().text("Chọn thư mục...").parent(&window).position((741,334)).size((108,28)).build(&mut browse_folder).unwrap();
-    nwg::Button::builder().text("Chọn EXE...").parent(&window).position((741,380)).size((108,28)).build(&mut browse_exe).unwrap();
+    nwg::Button::builder().text("Test URL + Token").parent(&window).position((741,108)).size((108,28)).build(&mut test).unwrap();
+    nwg::Button::builder().text("Làm mới / 更新").parent(&window).position((741,154)).size((108,28)).build(&mut refresh).unwrap();
+    nwg::Button::builder().text("Chọn file...").parent(&window).position((741,246)).size((108,28)).build(&mut browse_xlsx).unwrap();
+    nwg::Button::builder().text("Chọn thư mục...").parent(&window).position((741,384)).size((108,28)).build(&mut browse_folder).unwrap();
+    nwg::Button::builder().text("Chọn EXE...").parent(&window).position((741,430)).size((108,28)).build(&mut browse_exe).unwrap();
 
     let mut auto=nwg::CheckBox::default(); let mut boot=nwg::CheckBox::default();
     nwg::CheckBox::builder().text("Tự động kiểm tra cập nhật khi rảnh / 待機中に自動更新").parent(&window)
-        .position((20,486)).size((550,32))
+        .position((20,536)).size((550,32))
         .check_state(if c.auto_update_enabled{nwg::CheckBoxState::Checked}else{nwg::CheckBoxState::Unchecked})
         .build(&mut auto).unwrap();
     nwg::CheckBox::builder().text("Khởi động cùng Windows khi đăng nhập / Windows起動").parent(&window)
-        .position((20,527)).size((550,32))
+        .position((20,577)).size((550,32))
         .check_state(if startup_checked(){nwg::CheckBoxState::Checked}else{nwg::CheckBoxState::Unchecked})
         .build(&mut boot).unwrap();
 
     let mut note=nwg::Label::default();
     nwg::Label::builder().text(&format!("Phiên bản Settings: v{app_version} | Lưu config.ini | Excel 2013 cần thiết để xuất PDF."))
-        .parent(&window).position((20,563)).size((820,28)).build(&mut note).unwrap();
+        .parent(&window).position((20,613)).size((820,28)).build(&mut note).unwrap();
+
+
+    // MICS tab controls are separate from the print configuration and remain hidden until selected.
+    let mics_fields=[
+      ("Firebird host / サーバー",mics_cfg.host.clone()),
+      ("Firebird port / ポート",mics_cfg.port.clone()),
+      ("Database server path / DB パス",mics_cfg.database.clone()),
+      ("Firebird user / ユーザー",mics_cfg.user.clone()),
+      ("Cloudflare MICS Sync URL",mics_cfg.sync_url.clone()),
+      ("Chu kỳ đồng bộ (giây) / 同期間隔",mics_cfg.interval_seconds.clone()),
+    ];
+    let mut mics_labels=Vec::new();let mut mics_inputs=Vec::new();
+    for (i,(name,value)) in mics_fields.iter().enumerate(){
+      let y=145+(i as i32)*64;
+      let mut l=nwg::Label::default();
+      nwg::Label::builder().text(name).parent(&window).position((20,y)).size((320,28)).build(&mut l).unwrap();
+      let mut input=nwg::TextInput::default();
+      nwg::TextInput::builder().text(value).parent(&window).position((350,y)).size((480,28)).build(&mut input).unwrap();
+      l.set_visible(false);input.set_visible(false);
+      mics_labels.push(l);mics_inputs.push(input);
+    }
+    let mut mics_enabled=nwg::CheckBox::default();
+    nwg::CheckBox::builder().text("Bật đồng bộ MICS / MICS同期を有効化").parent(&window)
+      .position((20,83)).size((570,36))
+      .check_state(if mics_cfg.enabled{nwg::CheckBoxState::Checked}else{nwg::CheckBoxState::Unchecked})
+      .build(&mut mics_enabled).unwrap();
+    mics_enabled.set_visible(false);
+    let mut mics_note=nwg::Label::default();
+    nwg::Label::builder().text("Chỉ bật trên 1 máy. Token: MICS_SYNC_TOKEN; mật khẩu: MICS_DB_PASSWORD (biến môi trường Windows).")
+      .parent(&window).position((20,548)).size((830,45)).build(&mut mics_note).unwrap();
+    mics_note.set_visible(false);
 
     // Settings hiển thị thông tin updater thực tế, không mô phỏng phần trăm chạy.
     let mut update_label=nwg::Label::default();
     nwg::Label::builder().text("Cập nhật Rust / 更新状況: Chưa có hoạt động cập nhật")
-        .parent(&window).position((20,598)).size((820,26)).build(&mut update_label).unwrap();
+        .parent(&window).position((20,648)).size((820,26)).build(&mut update_label).unwrap();
     let mut update_bar=nwg::ProgressBar::default();
     nwg::ProgressBar::builder().range(0..100).pos(0)
-        .parent(&window).position((20,630)).size((820,22)).build(&mut update_bar).unwrap();
+        .parent(&window).position((20,680)).size((820,22)).build(&mut update_bar).unwrap();
     if let Some((percent,status))=read_update_progress(){
         update_bar.set_pos(percent);
         update_label.set_text(&format!("Cập nhật Rust / 更新状況: {status}"));
@@ -273,8 +311,8 @@ fn main() {
     nwg::Timer::builder().parent(&window).interval(750).stopped(false).build(&mut update_timer).unwrap();
     let update_timer_handle=update_timer.handle;
     let mut save=nwg::Button::default();let mut close=nwg::Button::default();
-    nwg::Button::builder().text("Lưu cấu hình / 設定を保存").parent(&window).position((465,690)).size((205,42)).build(&mut save).unwrap();
-    nwg::Button::builder().text("Đóng / 閉じる").parent(&window).position((692,690)).size((150,42)).build(&mut close).unwrap();
+    nwg::Button::builder().text("Lưu cấu hình / 設定を保存").parent(&window).position((465,728)).size((205,42)).build(&mut save).unwrap();
+    nwg::Button::builder().text("Đóng / 閉じる").parent(&window).position((692,728)).size((150,42)).build(&mut close).unwrap();
 
     // Spooler có thể chặn rất lâu nếu có máy in mạng offline.
     // Tuyệt đối không gọi EnumPrintersW trên luồng giao diện.
@@ -289,11 +327,22 @@ fn main() {
         if printer_tx.send(found).is_ok(){notice_sender.notice();}
     });
     let inputs=Rc::new(inputs);
+    let labels=Rc::new(labels);
+    let mics_inputs=Rc::new(mics_inputs);
+    let mics_labels=Rc::new(mics_labels);
+    let mics_enabled=Rc::new(mics_enabled);
+    let mics_note=Rc::new(mics_note);
+    let print_note=Rc::new(note);
+    let print_printer_label=Rc::new(p_label);
+    let print_mode_label=Rc::new(mode_label);
+    let print_browse=Rc::new([browse_xlsx,browse_folder,browse_exe,refresh,test]);
+    let tab_handles=(tab_print.handle,tab_mics.handle);
+    let active_mics_event=Rc::clone(&active_mics);
     let p=Rc::new(printer);let m=Rc::new(mode);
     let a=Rc::new(auto);let b=Rc::new(boot);
     let update_label=Rc::new(update_label);
     let update_bar=Rc::new(update_bar);
-    let handles=(save.handle,close.handle,refresh.handle,browse_xlsx.handle,browse_folder.handle,browse_exe.handle,test.handle);
+    let handles=(save.handle,close.handle,print_browse[3].handle,print_browse[0].handle,print_browse[1].handle,print_browse[2].handle,print_browse[4].handle);
     let win=window.handle;
     let callback=nwg::full_bind_event_handler(&win,move|ev,_data,h|{
         if ev==nwg::Event::OnTimerTick && h==update_timer_handle {
@@ -317,6 +366,24 @@ fn main() {
         }
         if ev==nwg::Event::OnWindowClose&&h==win {nwg::stop_thread_dispatch();return}
         if ev!=nwg::Event::OnButtonClick {return}
+        if h==tab_handles.0 || h==tab_handles.1 {
+           let show_mics=h==tab_handles.1;
+           active_mics_event.set(show_mics);
+           for widget in labels.iter(){widget.set_visible(!show_mics);}
+           for widget in inputs.iter(){widget.set_visible(!show_mics);}
+           print_printer_label.set_visible(!show_mics);
+           print_mode_label.set_visible(!show_mics);
+           p.set_visible(!show_mics);
+           m.set_visible(!show_mics);
+           for widget in print_browse.iter(){widget.set_visible(!show_mics);}
+           a.set_visible(!show_mics);b.set_visible(!show_mics);
+           print_note.set_visible(!show_mics);
+           for widget in mics_labels.iter(){widget.set_visible(show_mics);}
+           for widget in mics_inputs.iter(){widget.set_visible(show_mics);}
+           mics_enabled.set_visible(show_mics);
+           mics_note.set_visible(show_mics);
+           return;
+        }
         if h==handles.1 {nwg::stop_thread_dispatch();return}
         if h==handles.6 {
             // Dùng nội dung đang nhập; không yêu cầu lưu token xuống ổ đĩa.
@@ -336,6 +403,22 @@ fn main() {
         else if h==handles.4 {if let Some(s)=pick_file("folder"){inputs[5].set_text(&s);}}
         else if h==handles.5 {if let Some(s)=pick_file("exe"){inputs[6].set_text(&s);}}
         else if h==handles.0 {
+            if active_mics_event.get() {
+                let cfg=MicsSettings{
+                   enabled:mics_enabled.check_state()==nwg::CheckBoxState::Checked,
+                   host:mics_inputs[0].text().trim().into(),
+                   port:mics_inputs[1].text().trim().into(),
+                   database:mics_inputs[2].text().trim().into(),
+                   user:mics_inputs[3].text().trim().into(),
+                   sync_url:mics_inputs[4].text().trim().into(),
+                   interval_seconds:mics_inputs[5].text().trim().into(),
+                };
+                match cfg.save(&Config::base_dir().join("mics.ini")){
+                   Ok(())=>nwg::simple_message("MICS Settings","Đã lưu mics.ini. Khởi động lại Print Agent để áp dụng cài đặt."),
+                   Err(e)=>nwg::error_message("Không lưu được MICS",&e),
+                }
+                return;
+            }
             let parse=||->Result<Config,String>{
                 let poll_seconds=inputs[4].text().parse::<u64>().map_err(|_|"Chu kỳ phải là số")?;
                 let max_pdf_pages=inputs[7].text().parse::<usize>().map_err(|_|"Số trang phải là số")?;
@@ -357,7 +440,7 @@ fn main() {
             let result=parse().and_then(|c|c.save(&Config::base_dir().join("config.ini")))
                 .and_then(|_|startup(b.check_state()==nwg::CheckBoxState::Checked));
             match result{
-                Ok(())=>{nwg::simple_message("Fujifilm Print","Đã lưu config.ini và cài đặt khởi động cùng Windows. Hãy khởi động lại Agent.");}
+                Ok(())=>{nwg::simple_message("MICS Print","Đã lưu config.ini và cài đặt khởi động cùng Windows. Hãy khởi động lại Agent.");}
                 Err(e)=>{nwg::error_message("Không lưu được cấu hình",&e);}
             }
         }
