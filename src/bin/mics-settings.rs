@@ -88,7 +88,7 @@ impl MicsSettings {
   }
  }
  fn append(out:&mut Vec<String>,c:&Self){
-  for (k,v) in [("enabled",if c.enabled{"1"}else{"0"}),("host",&c.host),("port",&c.port),("database",&c.database),("user",&c.user),("sync_url",&c.sync_url),("interval_seconds",&c.interval_seconds)]{
+  for (k,v) in [("enabled",if c.enabled{"1"}else{"0"}),("host",c.host.as_str()),("port",c.port.as_str()),("database",c.database.as_str()),("user",c.user.as_str()),("sync_url",c.sync_url.as_str()),("interval_seconds",c.interval_seconds.as_str())]{
    out.push(format!("{k}={v}"));
   }
  }
