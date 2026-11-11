@@ -5,7 +5,7 @@ pub mod app {
     use sha2::{Digest,Sha256};
 
     const REPO: &str="https://api.github.com/repos/maedandori/mics-print/releases/latest";
-    const FILES: [&str;3] = ["Print-Agent.exe", "Print-Settings.exe", "MICS-Credentials.exe"];
+    const FILES: [&str;2] = ["Print-Agent.exe", "Print-Settings.exe"];
     fn log(s:&str){let path=std::env::current_exe().unwrap().parent().unwrap().join("rust-update.log");
         use std::io::Write;if let Ok(mut f)=fs::OpenOptions::new().create(true).append(true).open(path){let _=writeln!(f,"{s}");}}
     // Trang Settings đọc trạng thái tại thư mục ứng dụng. Phần trăm tải là byte thực nhận.
