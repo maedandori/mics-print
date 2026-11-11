@@ -390,7 +390,7 @@ fn main() {
                 match result {
                     Ok(msg)=>nwg::simple_message("MICS Sync Test", &msg),
                     Err(msg)=>nwg::error_message("MICS Sync Test thất bại", &msg),
-                }
+                };
             }
             return;
         }
