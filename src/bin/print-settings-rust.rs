@@ -464,7 +464,7 @@ fn main() {
                        mics_note.set_text("Credentials đã được lưu bằng DPAPI. Để trống ô bí mật sẽ giữ nguyên giá trị cũ.");
                        nwg::simple_message("MICS Settings","Đã lưu MICS và thông tin bảo mật bằng DPAPI. Khởi động lại Agent.");
                    },
-                   Err(e)=>nwg::error_message("Không lưu được MICS",&e),
+                   Err(e)=>{nwg::error_message("Không lưu được MICS",&e);}
                 }
                 return;
             }
