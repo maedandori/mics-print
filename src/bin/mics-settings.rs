@@ -39,7 +39,7 @@ impl MicsSettings {
   let interval=self.interval_seconds.parse::<u64>().map_err(|_|"Thời gian đồng bộ phải là số nguyên")?;
   if !(15..=3600).contains(&interval){return Err("Thời gian đồng bộ MICS phải từ 15 đến 3600 giây".into())}
   for value in [&self.host,&self.port,&self.database,&self.user,&self.sync_url,&self.interval_seconds]{
-   if value.contains(['\r','\n']){return Err("Giá trị không được chứa ký tự xuống dòng".into())}
+   if value.contains('\r')||value.contains('\n'){return Err("Giá trị không được chứa ký tự xuống dòng".into())}
   }
   if self.enabled{
    if self.host.trim().is_empty()||self.database.trim().is_empty()||self.user.trim().is_empty(){return Err("Nhập đầy đủ host, đường dẫn database và user Firebird".into())}
