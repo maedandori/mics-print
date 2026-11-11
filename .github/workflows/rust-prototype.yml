@@ -20,6 +20,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Cài Rust stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Kiểm tra mọi Rust binary trước khi build
+        run: cargo check --all-targets
       - name: Kiểm thử Agent có icon máy in
         run: cargo test --release --bin print-tray-rust --features agent-icon
       - name: Kiểm thử Settings có icon bánh răng
