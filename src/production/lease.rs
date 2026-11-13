@@ -20,7 +20,7 @@ pub fn config()->Result<LeaseConfig,String>{
     let mut inside=false;
     let mut enabled=false;
     let mut url=String::new();
-    let mut id="mics-primary".to_owned();
+    let id=format!("primary-{}",crate::production::agent_id()?);
     for line in raw.lines(){
         let line=line.trim();
         if line.starts_with('['){inside=line.eq_ignore_ascii_case("[mics]");continue}
@@ -29,7 +29,6 @@ pub fn config()->Result<LeaseConfig,String>{
             match k.trim().to_ascii_lowercase().as_str(){
                 "failover_enabled"=>enabled=v.trim()=="1",
                 "coordinator_url"=>url=v.trim().to_owned(),
-                "agent_id"=>id=v.trim().to_owned(),
                 _=>{}
             }
         }
