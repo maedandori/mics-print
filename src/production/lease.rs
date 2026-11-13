@@ -20,7 +20,7 @@ pub fn config()->Result<LeaseConfig,String>{
     let mut inside=false;
     let mut enabled=false;
     let mut url=String::new();
-    let id=format!("primary-{}",crate::production::agent_id()?);
+    let mut id=String::new();
     for line in raw.lines(){
         let line=line.trim();
         if line.starts_with('['){inside=line.eq_ignore_ascii_case("[mics]");continue}
@@ -34,6 +34,7 @@ pub fn config()->Result<LeaseConfig,String>{
         }
     }
     if enabled {
+        id=format!("primary-{}",crate::production::agent_id()?);
         let parsed=url::Url::parse(&url).map_err(|e|e.to_string())?;
         if parsed.scheme()!="https"||parsed.host_str().is_none()||parsed.query().is_some()||parsed.fragment().is_some(){
             return Err("Coordinator must be HTTPS".into())
