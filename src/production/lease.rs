@@ -13,6 +13,7 @@ pub struct LeaseConfig{
     pub enabled:bool,
     pub url:String,
     pub id:String,
+    pub display_name:String,
 }
 pub fn config()->Result<LeaseConfig,String>{
     let path=crate::production::Config::base_dir().join("mics.ini");
@@ -21,6 +22,7 @@ pub fn config()->Result<LeaseConfig,String>{
     let mut enabled=false;
     let mut url=String::new();
     let mut id=String::new();
+    let mut display_name=String::new();
     for line in raw.lines(){
         let line=line.trim();
         if line.starts_with('['){inside=line.eq_ignore_ascii_case("[mics]");continue}
@@ -29,6 +31,7 @@ pub fn config()->Result<LeaseConfig,String>{
             match k.trim().to_ascii_lowercase().as_str(){
                 "failover_enabled"=>enabled=v.trim()=="1",
                 "coordinator_url"=>url=v.trim().to_owned(),
+                "display_name"=>display_name=v.trim().to_owned(),
                 _=>{}
             }
         }
@@ -43,7 +46,24 @@ pub fn config()->Result<LeaseConfig,String>{
             return Err("Invalid primary agent ID".into())
         }
     }
-    Ok(LeaseConfig{enabled,url,id})
+    if display_name.is_empty(){
+        display_name=std::env::var("COMPUTERNAME").unwrap_or_else(|_|"MICS-PRINT".into());
+    }
+    if display_name.chars().any(|c|c.is_control()){return Err("Invalid PC display name".into())}
+    display_name=display_name.chars().take(60).collect();
+    Ok(LeaseConfig{enabled,url,id,display_name})
+}
+pub fn presence(cfg:&LeaseConfig,secret:&str)->Result<(),String>{
+    if !cfg.enabled{return Ok(())}
+    if secret.is_empty(){return Err("MICS token missing for presence".into())}
+    let response=ureq::AgentBuilder::new().timeout(Duration::from_secs(8)).build()
+        .post(&format!("{}/presence",cfg.url.trim_end_matches('/')))
+        .set("Authorization",&format!("Bearer {secret}"))
+        .send_json(serde_json::json!({"role":"primary","agent_id":cfg.id,
+            "display_name":cfg.display_name,"standby_enabled":true}))
+        .map_err(|e|format!("PRIMARY_PRESENCE_FAILED {e}"))?;
+    if response.status()!=200{return Err(format!("PRIMARY_PRESENCE_HTTP {}",response.status()))}
+    Ok(())
 }
 pub fn acquire(cfg:&LeaseConfig,secret:&str)->Result<Option<Grant>,String>{
     if !cfg.enabled{return Ok(None)}
