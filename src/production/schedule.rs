@@ -118,8 +118,14 @@ pub fn start_background(){
    crate::production::log(&format!("MICS_SCHEDULE_CACHE_ERROR {e}"));return
   }
   let last_sent=dir.join("last-acknowledged-week.sha256");
+  let lease_config=match crate::production::lease::config(){Ok(v)=>v,Err(e)=>{crate::production::log(&format!("SCHEDULE_LEASE_CONFIG_ERROR {e}"));return}};
   loop{
    let run=(||->Result<bool,String>{
+    let grant=if lease_config.enabled{
+      match crate::production::lease::acquire(&lease_config,&creds.mics_sync_token)?{
+       Some(g)=>Some(g),None=>return Ok(false)
+      }
+    }else{None};
     let (from,to,local_end)=window();
     let rows=read(&config.0,config.1,&config.2,&config.3,&creds.db_password,&from,&local_end)?;
     let cache=json!({"from":from,"to":local_end,"rows":rows});
@@ -139,12 +145,21 @@ pub fn start_background(){
     let data=serde_json::to_vec(&payload).map_err(|e|e.to_string())?;
     let hash=format!("{:x}",Sha256::digest(&data));
     if fs::read_to_string(&last_sent).ok().as_deref()==Some(hash.as_str()){return Ok(false)}
-    let response=ureq::AgentBuilder::new().timeout(Duration::from_secs(30)).build()
-     .post(&config.4).set("Authorization",&format!("Bearer {}",creds.mics_sync_token))
-     .send_json(payload).map_err(|e|format!("Schedule POST: {e}"))?;
-    if response.status()!=200{return Err(format!("Schedule HTTP {}",response.status()))}
-    let result:Value=response.into_json().map_err(|e|e.to_string())?;
-    if result["ok"]!=true{return Err("Schedule Worker did not acknowledge snapshot".into())}
+    if lease_config.enabled{
+      // The snapshot is sent only through the fenced coordinator route.
+      let next=crate::production::lease::acquire(&lease_config,&creds.mics_sync_token)?
+       .ok_or("Schedule lost lease")?;
+      if grant.as_ref().is_none_or(|g|g.epoch!=next.epoch){return Err("Schedule epoch changed".into())}
+      let endpoint=format!("{}/schedule",lease_config.url.trim_end_matches('/'));
+      crate::production::lease::post(&endpoint,&creds.mics_sync_token,&lease_config,&next,payload)?;
+    }else{
+      let response=ureq::AgentBuilder::new().timeout(Duration::from_secs(30)).build()
+       .post(&config.4).set("Authorization",&format!("Bearer {}",creds.mics_sync_token))
+       .send_json(payload).map_err(|e|format!("Schedule POST: {e}"))?;
+      if response.status()!=200{return Err(format!("Schedule HTTP {}",response.status()))}
+      let result:Value=response.into_json().map_err(|e|e.to_string())?;
+      if result["ok"]!=true{return Err("Schedule Worker did not acknowledge snapshot".into())}
+    }
     replace_local(&last_sent,hash.as_bytes())?;
     Ok(true)
    })();
