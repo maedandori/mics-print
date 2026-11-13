@@ -150,7 +150,14 @@ pub fn start_background(){
   let token=credentials.mics_sync_token;
   let mut last=String::new();
   let lease_config=match crate::production::lease::config(){Ok(v)=>v,Err(e)=>{crate::production::log(&format!("MICS_LEASE_CONFIG_ERROR {e}"));return}};
+  let mut last_presence:Option<std::time::Instant>=None;
   loop{
+   if lease_config.enabled && last_presence.map(|t|t.elapsed()>=Duration::from_secs(60)).unwrap_or(true){
+     if let Err(e)=crate::production::lease::presence(&lease_config,&token){
+       crate::production::log(&format!("MICS_PRIMARY_PRESENCE_ERROR {e}"));
+     }
+     last_presence=Some(std::time::Instant::now());
+   }
    let permission=if lease_config.enabled{
      match crate::production::lease::acquire(&lease_config,&token){
        Ok(Some(grant))=>Some(grant),
