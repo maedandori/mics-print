@@ -69,3 +69,17 @@ pub fn post(url:&str,secret:&str,config:&LeaseConfig,grant:&Grant,payload:serde_
     if result["ok"]!=true{return Err("Coordinator did not acknowledge upload".into())}
     Ok(result)
 }
+
+pub fn release(config:&LeaseConfig,secret:&str,grant:&Grant)->Result<(),String>{
+    let endpoint=format!("{}/release",config.url.trim_end_matches('/'));
+    let response=ureq::AgentBuilder::new().timeout(Duration::from_secs(10)).build()
+        .post(&endpoint).set("Authorization",&format!("Bearer {secret}"))
+        .set("X-Mics-Agent-Id",&config.id)
+        .set("X-Mics-Lease-Token",&grant.lease_token)
+        .set("X-Mics-Lease-Epoch",&grant.epoch.to_string())
+        .send_json(serde_json::json!({}))
+        .map_err(|e|format!("Lease release failed: {e}"))?;
+    let data:serde_json::Value=response.into_json().map_err(|e|e.to_string())?;
+    if data["ok"]!=true{return Err("Coordinator did not acknowledge release".into())}
+    Ok(())
+}
