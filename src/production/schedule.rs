@@ -127,7 +127,15 @@ pub fn start_background(){
       }
     }else{None};
     let (from,to,local_end)=window();
-    let rows=read(&config.0,config.1,&config.2,&config.3,&creds.db_password,&from,&local_end)?;
+    let rows=match read(&config.0,config.1,&config.2,&config.3,&creds.db_password,&from,&local_end){
+      Ok(rows)=>rows,
+      Err(e)=>{
+        if let Some(g)=grant.as_ref(){
+          let _=crate::production::lease::release(&lease_config,&creds.mics_sync_token,g);
+        }
+        return Err(e)
+      }
+    };
     let cache=json!({"from":from,"to":local_end,"rows":rows});
     let bytes=serde_json::to_vec(&cache).map_err(|e|e.to_string())?;
     // Write only if the cached content changed.
@@ -166,7 +174,7 @@ pub fn start_background(){
    match run{
     Ok(true)=>crate::production::log("MICS_SCHEDULE_SYNC_OK"),
     Ok(false)=>(),
-    Err(e)=>crate::production::log(&format!("MICS_SCHEDULE_SYNC_ERROR {e}"))
+    Err(e)=>{crate::production::log(&format!("MICS_SCHEDULE_SYNC_ERROR {e}"));if lease_config.enabled{thread::sleep(Duration::from_secs(90));}}
    }
    thread::sleep(Duration::from_secs(60));
   }
