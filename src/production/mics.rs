@@ -106,15 +106,29 @@ pub fn test_sync(host:&str, port:&str, database:&str, user:&str, url:&str, passw
   return Err("Sync URL phải là HTTPS hợp lệ".into())
  }
  let c=Config{enabled:true,host:host.into(),port,database:database.into(),user:user.into(),url:url.into(),seconds:30};
+ let lease_config=crate::production::lease::config()?;
+ let permission=if lease_config.enabled {
+    Some(crate::production::lease::acquire(&lease_config,token)?
+      .ok_or("Test sync blocked: primary has no coordinator lease")?)
+ } else {None};
  let mut data=read(&c,password).map_err(|e|format!("FIREBIRD_READ_FAILED: {e}"))?;
  let machines=data["machines"].as_array().ok_or("Không tìm thấy machines")?;
  let count=machines.len();
  if count==0{return Err("Firebird kết nối được nhưng không trả về máy nào; không gửi bản ghi rỗng".into())}
  let with_staff=machines.iter().filter(|x|x["staff_name"].as_str().is_some_and(|v|!v.trim().is_empty())).count();
  data["sampled_at"]=json!(chrono::Utc::now().to_rfc3339());
- let response=ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build()
-  .post(url.trim()).set("Authorization",&format!("Bearer {token}")).send_json(data)
-  .map_err(|e|format!("WORKER_SYNC_FAILED: {e}"))?;
+ let response=if let Some(original)=permission{
+    let now=crate::production::lease::acquire(&lease_config,token)?
+      .ok_or("Test sync lost coordinator lease")?;
+    if now.epoch!=original.epoch{return Err("Test sync coordinator epoch changed".into())}
+    let endpoint=format!("{}/sync",lease_config.url.trim_end_matches('/'));
+    let result=crate::production::lease::post(&endpoint,token,&lease_config,&now,data)?;
+    return Ok(format!("Firebird test sync accepted by fenced Coordinator, {count} machines; result={}",result["ok"]))
+ }else{
+    ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build()
+      .post(url.trim()).set("Authorization",&format!("Bearer {token}")).send_json(data)
+      .map_err(|e|format!("WORKER_SYNC_FAILED: {e}"))?
+ };
  if !(200..300).contains(&response.status()){return Err(format!("WORKER_HTTP_{}",response.status()))}
  let status=response.status();
  let body:Value=response.into_json().unwrap_or(Value::Null);
