@@ -4,16 +4,19 @@ use rsfbclient::prelude::*;
 use serde_json::{json,Value};
 use sha2::{Digest,Sha256};
 use std::{collections::{BTreeMap,BTreeSet},fs,path::{Path,PathBuf},thread,time::Duration};
-use chrono::{FixedOffset,Timelike,Utc};
+use chrono::{Datelike,FixedOffset,Utc};
 const MACHINES:[i32;14]=[5,6,7,8,10,11,12,13,14,15,16,17,18,19];
 
 fn window()->(String,String,String){
  let jst=FixedOffset::east_opt(9*3600).expect("JST");
  let now=Utc::now().with_timezone(&jst);
- let day=if (now.hour(),now.minute())<(7,30){now.date_naive()-chrono::Duration::days(1)}else{now.date_naive()};
- let start=day.and_hms_opt(7,30,0).expect("shift");
+ // Align to Monday 00:00 JST so the full current and following calendar
+ // weeks are available, even when the current day is Friday or Sunday.
+ let today=now.date_naive();
+ let monday=today-chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+ let start=monday.and_hms_opt(0,0,0).expect("week start");
  let fmt=|d:chrono::NaiveDateTime|d.format("%Y-%m-%d %H:%M:%S").to_string();
- (fmt(start),fmt(start+chrono::Duration::days(7)),fmt(start+chrono::Duration::days(30)))
+ (fmt(start),fmt(start+chrono::Duration::days(14)),fmt(start+chrono::Duration::days(30)))
 }
 fn normalize_time(s:&str)->Result<String,String>{
  let s=s.trim().replace('T'," ");
@@ -124,15 +127,15 @@ pub fn start_background(){
     // Write only if the cached content changed.
     let path=dir.join("schedule-local.json");
     if fs::read(&path).ok().as_deref()!=Some(bytes.as_slice()){replace_local(&path,&bytes)?}
-    let week:Vec<Value>=rows.into_iter().filter(|r|{
+    let fortnight:Vec<Value>=rows.into_iter().filter(|r|{
      let start=r["start_at"].as_str().unwrap_or("");
      let end=r["end_at"].as_str().unwrap_or(start);
      start<to.as_str()&&end>=from.as_str()
     }).collect();
-    if week.is_empty(){return Err("Schedule returned zero rows; retaining previous D1 data".into())}
-    if week.len()>3000{return Err("7-day schedule too large".into())}
+    if fortnight.is_empty(){return Err("Schedule returned zero rows; retaining previous D1 data".into())}
+    if fortnight.len()>3000{return Err("14-day schedule too large".into())}
     let payload=json!({"source":"mics-print-schedule","window_start":from,"window_end":to,
-      "machines":MACHINES,"rows":week});
+      "machines":MACHINES,"rows":fortnight});
     let data=serde_json::to_vec(&payload).map_err(|e|e.to_string())?;
     let hash=format!("{:x}",Sha256::digest(&data));
     if fs::read_to_string(&last_sent).ok().as_deref()==Some(hash.as_str()){return Ok(false)}
