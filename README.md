@@ -19,3 +19,13 @@ Run **Print-Settings.exe**, open the **MICS tab**, and enter secrets under the s
 The Agent reads this encrypted vault in-process when MICS sync is enabled. It does not launch a command-line helper, expose credentials through stdout, write secrets into mics.ini, or require environment variables. DPAPI is scoped to the current Windows user on the local machine. A different Windows account or another PC must set up its own vault. An attacker already running code as this user can potentially decrypt the vault; use a dedicated Windows account and least-privilege Firebird user.
 
 New releases include two EXEs: Print-Agent.exe and Print-Settings.exe. The vault is stored outside the installation directory and never included in GitHub releases. Restart Print Agent after saving credentials.
+
+## Staged ACTIVE/STANDBY Firebird handover (not yet activated in production)
+`src/production/lease.rs` adds an **optional** coordinator lease shared by both the machine and schedule reader threads. Print and PDF jobs are unaffected.
+- `mics.ini` default `failover_enabled=0`; with flag OFF legacy MICS sync continues as before.
+- Set `coordinator_url=https://machine-control.maedandoris.workers.dev/api/mics-failover` and `failover_enabled=1` **only after** upgrading the primary Windows agent, installing the updated backup agent and verifying the Worker coordinator API.
+- Primary uses the existing `MICS_SYNC_TOKEN` from its per-user DPAPI vault to request a `role=primary` lease. The unique primary agent ID comes from `agent-id.txt`, not a shared hardcoded ID.
+- The machine snapshot, weekly schedule, and manual MICS test are all lease-gated when enabled; old unleased Worker routes will reject writes while Cloudflare's `MICS_FAILOVER_ENABLED=1`.
+- If primary Firebird reads fail, the primary attempts to release its lease and backs off. A returning primary signals the backup to stop renewal; takeover occurs after the backup's short lease expires, not by simultaneous use of Firebird.
+- This is a staged protocol, not proof of production-ready zero-overlap: verify Windows binary builds, coordinator deployment, both agents' logs and a deliberate disconnect/reconnect test before changing the Cloudflare flag.
+- A standalone non-installing Windows ZIP artifact is built by `.github/workflows/failover-build.yml`. Do not overwrite working production executables until tests are successful.
