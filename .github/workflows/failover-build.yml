@@ -1,0 +1,32 @@
+name: Build MICS Print Failover Windows (portable test)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust tests
+        run: cargo test
+      - name: Build Windows EXEs
+        run: cargo build --release
+      - name: Package portable backup for staged rollout
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path failover-package | Out-Null
+          Copy-Item target/release/print-agent-rust.exe failover-package/Print-Agent.exe
+          Copy-Item target/release/print-settings-rust.exe failover-package/Print-Settings.exe
+          Copy-Item target/release/print-tray-rust.exe failover-package/Print-Tray.exe
+          Copy-Item mics.ini.example failover-package/
+          Compress-Archive -Path failover-package/* -DestinationPath MICS-Print-Failover-Portable-Windows.zip -Force
+      - name: Upload ZIP for manual test
+        uses: actions/upload-artifact@v4
+        with:
+          name: MICS-Print-Failover-Portable-Windows
+          path: MICS-Print-Failover-Portable-Windows.zip
+          if-no-files-found: error
