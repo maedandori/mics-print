@@ -6,3 +6,10 @@ database=D:\MICS\DATA.FDB
 user=SYSDBA
 sync_url=https://YOUR-WORKER.workers.dev/YOUR-EXISTING-MICS-SYNC-ROUTE
 interval_seconds=30
+
+; Primary coordinator failover is deliberately disabled by default.
+; Enable ONLY after the new primary and backup EXEs are installed,
+; the MICS Backup secrets are provisioned and Cloudflare is verified.
+failover_enabled=0
+coordinator_url=https://machine-control.maedandoris.workers.dev/api/mics-failover
+; Agent ID for lease comes from this PC's persistent print-agent agent-id.txt.
