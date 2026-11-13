@@ -135,17 +135,39 @@ pub fn start_background(){
   let pass=credentials.db_password;
   let token=credentials.mics_sync_token;
   let mut last=String::new();
+  let lease_config=match crate::production::lease::config(){Ok(v)=>v,Err(e)=>{crate::production::log(&format!("MICS_LEASE_CONFIG_ERROR {e}"));return}};
   loop{
+   let permission=if lease_config.enabled{
+     match crate::production::lease::acquire(&lease_config,&token){
+       Ok(Some(grant))=>Some(grant),
+       Ok(None)=>{crate::production::log("MICS_PRIMARY_STANDBY");thread::sleep(Duration::from_secs(c.seconds));continue},
+       Err(e)=>{crate::production::log(&format!("MICS_LEASE_ERROR {e}"));thread::sleep(Duration::from_secs(c.seconds));continue}
+     }
+   }else{None};
    match read(&c,&pass){
     Ok(mut snap)=>{
      let hash=format!("{:x}",Sha256::digest(serde_json::to_vec(&snap).unwrap_or_default()));
      if hash!=last {
       snap["sampled_at"]=json!(chrono::Utc::now().to_rfc3339());
-      match ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build()
-       .post(&c.url).set("Authorization",&format!("Bearer {token}")).send_json(snap){
-       Ok(response) if response.status()==200=>{last=hash;crate::production::log("MICS_SYNC_OK");},
-       Ok(response)=>crate::production::log(&format!("MICS_SYNC_HTTP {}",response.status())),
-       Err(e)=>crate::production::log(&format!("MICS_SYNC_FAILED {e}"))
+      if lease_config.enabled{
+       // Re-check after Firebird read; no upload after lease loss.
+       match crate::production::lease::acquire(&lease_config,&token){
+        Ok(Some(next)) if permission.as_ref().is_some_and(|v|v.epoch==next.epoch)=>{
+         let endpoint=format!("{}/sync",lease_config.url.trim_end_matches('/'));
+         match crate::production::lease::post(&endpoint,&token,&lease_config,&next,snap){
+          Ok(_)=>{last=hash;crate::production::log("MICS_PRIMARY_SYNC_OK")},
+          Err(e)=>crate::production::log(&format!("MICS_PRIMARY_SYNC_ERROR {e}"))
+         }
+        },
+        _=>crate::production::log("MICS_PRIMARY_LEASE_LOST")
+       }
+      }else{
+       match ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build()
+        .post(&c.url).set("Authorization",&format!("Bearer {token}")).send_json(snap){
+        Ok(response) if response.status()==200=>{last=hash;crate::production::log("MICS_SYNC_OK");},
+        Ok(response)=>crate::production::log(&format!("MICS_SYNC_HTTP {}",response.status())),
+        Err(e)=>crate::production::log(&format!("MICS_SYNC_FAILED {e}"))
+       }
       }
      }
     }
