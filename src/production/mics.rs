@@ -171,7 +171,15 @@ pub fn start_background(){
       }
      }
     }
-    Err(e)=>crate::production::log(&format!("MICS_READ_FAILED {e}"))
+    Err(e)=>{
+     crate::production::log(&format!("MICS_READ_FAILED {e}"));
+     // Yield the Firebird lease on persistent DB read failure. Back off
+     // instead of immediately grabbing it again and starving the backup.
+     if let Some(g)=permission.as_ref(){
+       let _=crate::production::lease::release(&lease_config,&token,g);
+       thread::sleep(Duration::from_secs(90));
+     }
+    }
    }
    thread::sleep(Duration::from_secs(c.seconds));
   }
